@@ -13,8 +13,8 @@
     ["すっきりしている", "かさばっている"]
   ];
   const TARGET_PER_IMAGE = 3;
-  const QUESTION_COUNT = 60;
-  const STORAGE_KEY = "fashion_sd_survey_v1";
+  const QUESTION_COUNT = 30;
+  const STORAGE_KEY = "fashion_sd_survey_v2";
 
   const $ = (id) => document.getElementById(id);
   const panels = ["loadingPanel", "errorPanel", "introPanel", "surveyPanel", "completePanel"];
@@ -56,8 +56,7 @@
     return new URL(path.split("/").map(encodeURIComponent).join("/"), document.baseURI).href;
   }
   function answeredCount() {
-    return state.images.filter(img => state.answers[img.imageId] &&
-      QUESTIONS.every((_, i) => Number.isInteger(state.answers[img.imageId][i]))).length;
+    return Number(state?.submittedCount || 0);
   }
   function renderQuestion() {
     const item = state.images[state.index];
@@ -104,10 +103,13 @@
       });
     });
 
-    $("previousButton").disabled = state.index === 0;
-    const last = state.index === QUESTION_COUNT - 1;
-    $("nextButton").classList.toggle("hidden", last);
-    $("submitButton").classList.toggle("hidden", !last);
+    $("previousButton").classList.add("hidden");
+    // 1画像ごとに送信するため、通常の「次へ」ボタンは使用しない
+    $("nextButton").classList.add("hidden");
+    $("submitButton").classList.remove("hidden");
+    $("submitButton").disabled = false;
+    $("submitButton").textContent =
+      state.index === QUESTION_COUNT - 1 ? "回答を送信して終了" : "回答を送信して次へ";
     $("validationMessage").classList.add("hidden");
   }
   function allCurrentAnswered() {
@@ -115,27 +117,51 @@
     const a = state.answers[item.imageId] || {};
     return QUESTIONS.every((_, i) => Number.isInteger(a[i]) && a[i] >= 1 && a[i] <= 6);
   }
-  function goNext() {
+  async function submitCurrent() {
     if (!allCurrentAnswered()) {
       $("validationMessage").textContent = "この画像の9項目すべてに回答してください。";
       $("validationMessage").classList.remove("hidden");
       return;
     }
-    if (state.index < QUESTION_COUNT - 1) {
-      state.index++;
+
+    const item = state.images[state.index];
+    const scores = QUESTIONS.map((_, i) => state.answers[item.imageId][i]);
+
+    $("submitButton").disabled = true;
+    $("submitButton").textContent = "送信しています…";
+    $("validationMessage").classList.add("hidden");
+
+    try {
+      const result = await api("submitOne", {
+        sessionId: state.sessionId,
+        respondentId: state.respondentId,
+        response: { imageId: item.imageId, scores }
+      });
+
+      state.submittedCount = result.submittedCount;
+      state.index = state.submittedCount;
       saveLocal();
-      renderQuestion();
+
+      if (state.submittedCount >= QUESTION_COUNT) {
+        state.completed = true;
+        localStorage.removeItem(STORAGE_KEY);
+        $("completionId").textContent = `回答ID：${state.respondentId}`;
+        showPanel("completePanel");
+      } else {
+        renderQuestion();
+      }
       window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (e) {
+      // 通信が途切れた場合も、再開時にサーバー側の保存数を取得して重複送信を防ぐ
+      $("validationMessage").textContent =
+        `送信結果を確認できませんでした：${e.message}。回答は端末に残っています。再読み込みして続きから再開してください。`;
+      $("validationMessage").classList.remove("hidden");
+      $("submitButton").disabled = false;
+      $("submitButton").textContent =
+        state.index === QUESTION_COUNT - 1 ? "回答を送信して終了" : "回答を送信して次へ";
     }
   }
-  function goPrevious() {
-    if (state.index > 0) {
-      state.index--;
-      saveLocal();
-      renderQuestion();
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-  }
+
   async function startOrResume() {
     showPanel("loadingPanel");
     $("loadingText").textContent = "出題画像を準備しています…";
@@ -144,65 +170,50 @@
       if (local?.sessionId && local?.images?.length === QUESTION_COUNT && !local.completed) {
         try {
           const check = await api("resume", { sessionId: local.sessionId });
-          state = { ...local, images: check.images };
+          state = {
+            ...local,
+            images: check.images,
+            respondentId: check.respondentId,
+            submittedCount: check.submittedCount,
+            index: check.submittedCount
+          };
         } catch (resumeError) {
-          if (!String(resumeError.message).includes("有効期限")) throw resumeError;
+          if (!String(resumeError.message).includes("有効期限") &&
+              !String(resumeError.message).includes("見つからない")) throw resumeError;
           localStorage.removeItem(STORAGE_KEY);
           const sessionId = (crypto.randomUUID ? crypto.randomUUID() : `s${Date.now()}${Math.random().toString(16).slice(2)}`);
           const assigned = await api("assign", { sessionId, questionCount: QUESTION_COUNT });
-          state = { sessionId, respondentId: assigned.respondentId, images: assigned.images, answers: {}, index: 0, completed: false };
+          state = {
+            sessionId, respondentId: assigned.respondentId,
+            images: assigned.images, answers: {}, index: 0,
+            submittedCount: 0, completed: false
+          };
         }
       } else {
         const sessionId = (crypto.randomUUID ? crypto.randomUUID() : `s${Date.now()}${Math.random().toString(16).slice(2)}`);
         const assigned = await api("assign", { sessionId, questionCount: QUESTION_COUNT });
-        state = { sessionId, respondentId: assigned.respondentId, images: assigned.images, answers: {}, index: 0, completed: false };
+        state = {
+          sessionId, respondentId: assigned.respondentId,
+          images: assigned.images, answers: {}, index: 0,
+          submittedCount: 0, completed: false
+        };
       }
-      if (!Array.isArray(state.images) || state.images.length !== QUESTION_COUNT) throw new Error("出題画像が60枚ではありません。画像一覧とサーバー設定を確認してください。");
+      if (!Array.isArray(state.images) || state.images.length !== QUESTION_COUNT) {
+        throw new Error("出題画像が30枚ではありません。画像一覧とサーバー設定を確認してください。");
+      }
+      if (state.submittedCount >= QUESTION_COUNT) {
+        localStorage.removeItem(STORAGE_KEY);
+        $("completionId").textContent = `回答ID：${state.respondentId}`;
+        showPanel("completePanel");
+        return;
+      }
       saveLocal();
-      if (answeredCount() > 0 || state.index > 0) {
-        showPanel("introPanel");
-        $("startButton").textContent = "続きから回答する";
-      } else {
-        showPanel("introPanel");
-      }
+      showPanel("introPanel");
+      $("startButton").textContent = state.submittedCount > 0
+        ? "続きから回答する" : "アンケートを開始する";
     } catch (e) {
       $("errorText").textContent = e.message;
       showPanel("errorPanel");
-    }
-  }
-  async function submitAll() {
-    if (!allCurrentAnswered()) {
-      $("validationMessage").textContent = "最後の画像の9項目すべてに回答してください。";
-      $("validationMessage").classList.remove("hidden");
-      return;
-    }
-    if (answeredCount() !== QUESTION_COUNT) {
-      $("validationMessage").textContent = `未回答の画像があります。回答済みは${answeredCount()} / ${QUESTION_COUNT}枚です。前の画像に戻って回答してください。`;
-      $("validationMessage").classList.remove("hidden");
-      return;
-    }
-    $("submitButton").disabled = true;
-    $("submitButton").textContent = "送信しています…";
-    try {
-      const responses = state.images.map(img => ({
-        imageId: img.imageId,
-        scores: QUESTIONS.map((_, i) => state.answers[img.imageId][i])
-      }));
-      await api("submit", {
-        sessionId: state.sessionId,
-        respondentId: state.respondentId,
-        responses
-      });
-      state.completed = true;
-      localStorage.removeItem(STORAGE_KEY);
-      $("completionId").textContent = `回答ID：${state.respondentId}`;
-      showPanel("completePanel");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch (e) {
-      $("validationMessage").textContent = `送信できませんでした：${e.message} 回答はこの端末に保存されています。時間をおいて再度お試しください。`;
-      $("validationMessage").classList.remove("hidden");
-      $("submitButton").disabled = false;
-      $("submitButton").textContent = "60問の回答を送信する";
     }
   }
 
@@ -212,9 +223,9 @@
     renderQuestion();
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
-  $("previousButton").addEventListener("click", goPrevious);
-  $("nextButton").addEventListener("click", goNext);
-  $("submitButton").addEventListener("click", submitAll);
+  $("previousButton").classList.add("hidden");
+  $("nextButton").classList.add("hidden");
+  $("submitButton").addEventListener("click", submitCurrent);
 
   async function init() {
     try {
