@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="服の印象に関するSD法アンケート">
+  <title>服の印象アンケート</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="site-header">
+      <div class="eyebrow">FASHION IMPRESSION SURVEY</div>
+      <h1>服の印象アンケート</h1>
+      <p class="lead">表示された服の印象について、直感に近いものを選んでください。</p>
+    </header>
+
+    <section id="loadingPanel" class="panel center">
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="loadingText">アンケートを準備しています…</p>
+    </section>
+
+    <section id="errorPanel" class="panel hidden" role="alert">
+      <h2>アンケートを開始できません</h2>
+      <p id="errorText"></p>
+      <p class="small">設定を確認するか、研究担当者にお問い合わせください。</p>
+      <button id="retryButton" class="button secondary" type="button">再読み込み</button>
+    </section>
+
+    <section id="introPanel" class="panel hidden">
+      <div class="panel-topline">
+        <span class="tag">回答のお願い</span>
+        <span class="small">所要時間は個人差があります</span>
+      </div>
+      <h2>回答方法</h2>
+      <ul class="instructions">
+        <li>全部で<strong>60枚</strong>の服画像を評価します。</li>
+        <li>画像1枚につき、9項目をそれぞれ<strong>6段階</strong>で評価してください。</li>
+        <li>正解・不正解はありません。第一印象で回答してください。</li>
+        <li>回答はこのブラウザに一時保存され、最後にまとめて送信されます。</li>
+        <li>途中でページを閉じた場合、同じ端末・ブラウザで再開できます。</li>
+      </ul>
+      <div class="notice">
+        画像の色や服の種類を比較することよりも、表示された画像そのものから受ける印象を評価してください。
+      </div>
+      <button id="startButton" class="button primary" type="button">アンケートを開始する</button>
+    </section>
+
+    <section id="surveyPanel" class="hidden">
+      <div class="progress-block">
+        <div class="progress-label">
+          <span id="questionCounter">1 / 60 問</span>
+          <span id="answeredCounter">回答済み 0 / 60</span>
+        </div>
+        <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+      </div>
+
+      <article class="panel question-panel">
+        <div class="question-heading">
+          <div>
+            <span class="tag">評価する画像</span>
+            <h2 id="imageHeading">画像 1</h2>
+          </div>
+          <span id="categoryLabel" class="category-label"></span>
+        </div>
+        <div class="image-stage">
+          <img id="surveyImage" alt="評価対象の服画像">
+        </div>
+        <p class="prompt">この服から受ける印象を、各項目について選択してください。</p>
+        <div id="sdQuestions" class="sd-questions"></div>
+        <p id="validationMessage" class="validation hidden">9項目すべてに回答してください。</p>
+      </article>
+
+      <nav class="survey-nav" aria-label="アンケート操作">
+        <button id="previousButton" class="button secondary" type="button">前の画像</button>
+        <button id="nextButton" class="button primary" type="button">次の画像</button>
+        <button id="submitButton" class="button primary hidden" type="button">60問の回答を送信する</button>
+      </nav>
+      <p class="footnote">回答内容は端末内に一時保存されます。送信が完了するまでブラウザのデータを消去しないでください。</p>
+    </section>
+
+    <section id="completePanel" class="panel center hidden">
+      <div class="complete-mark" aria-hidden="true">✓</div>
+      <h2>ご回答ありがとうございました</h2>
+      <p>60問すべての回答が保存されました。</p>
+      <p id="completionId" class="small"></p>
+    </section>
+
+    <footer>服の印象に関する研究アンケート</footer>
+  </main>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
