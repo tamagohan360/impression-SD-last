@@ -34,11 +34,11 @@
       </div>
       <h2>回答方法</h2>
       <ul class="instructions">
-        <li>全部で<strong>60枚</strong>の服画像を評価します。</li>
+        <li>全部で<strong>30枚</strong>の服画像を評価します。</li>
         <li>画像1枚につき、9項目をそれぞれ<strong>6段階</strong>で評価してください。</li>
-        <li>正解・不正解はありません。第一印象で回答してください。</li>
-        <li>回答はこのブラウザに一時保存され、最後にまとめて送信されます。</li>
-        <li>途中でページを閉じた場合、同じ端末・ブラウザで再開できます。</li>
+        <li>9項目すべてに回答したら、その画像の回答を送信します。</li>
+        <li>送信が完了すると、自動的に次の画像へ進みます。これを30回繰り返します。</li>
+        <li>回答は1枚ごとにサーバーへ保存されます。途中でページを閉じても、同じ端末・ブラウザで続きから再開できます。</li>
       </ul>
       <div class="notice">
         画像の色や服の種類を比較することよりも、表示された画像そのものから受ける印象を評価してください。
@@ -49,8 +49,8 @@
     <section id="surveyPanel" class="hidden">
       <div class="progress-block">
         <div class="progress-label">
-          <span id="questionCounter">1 / 60 問</span>
-          <span id="answeredCounter">回答済み 0 / 60</span>
+          <span id="questionCounter">1 / 30 問</span>
+          <span id="answeredCounter">送信済み 0 / 30</span>
         </div>
         <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
       </div>
@@ -72,17 +72,17 @@
       </article>
 
       <nav class="survey-nav" aria-label="アンケート操作">
-        <button id="previousButton" class="button secondary" type="button">前の画像</button>
-        <button id="nextButton" class="button primary" type="button">次の画像</button>
-        <button id="submitButton" class="button primary hidden" type="button">60問の回答を送信する</button>
+        <button id="previousButton" class="button secondary hidden" type="button">前の画像</button>
+        <button id="nextButton" class="button primary hidden" type="button">次の画像</button>
+        <button id="submitButton" class="button primary" type="button">回答を送信して次へ</button>
       </nav>
-      <p class="footnote">回答内容は端末内に一時保存されます。送信が完了するまでブラウザのデータを消去しないでください。</p>
+      <p class="footnote">各画像の回答は送信後すぐに保存されます。送信中はページを閉じずにお待ちください。</p>
     </section>
 
     <section id="completePanel" class="panel center hidden">
       <div class="complete-mark" aria-hidden="true">✓</div>
       <h2>ご回答ありがとうございました</h2>
-      <p>60問すべての回答が保存されました。</p>
+      <p>30問すべての回答が保存されました。</p>
       <p id="completionId" class="small"></p>
     </section>
 
