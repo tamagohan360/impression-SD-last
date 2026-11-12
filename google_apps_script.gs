@@ -10,7 +10,7 @@
  */
 
 const CONFIG = {
-  QUESTION_COUNT: 60,
+  QUESTION_COUNT: 30,
   TARGET_PER_IMAGE: 3,
   ACTIVE_HOURS: 48,
   CATEGORIES: ["jumpsuit", "sweater", "coat", "jacket", "dress", "cardigan"],
@@ -56,6 +56,7 @@ function doPost(e) {
     if (action === "init") return json_(initializeImages_(body.images || []));
     if (action === "assign") return json_(assignImages_(body.sessionId, body.questionCount));
     if (action === "resume") return json_(resumeAssignment_(body.sessionId));
+    if (action === "submitOne") return json_(submitOneResponse_(body));
     if (action === "submit") return json_(submitResponses_(body));
     return json_({ok: false, error: "不明な操作です。"});
   } catch (err) {
@@ -134,7 +135,7 @@ function validateManifest_(images) {
 
 function assignImages_(sessionId, questionCount) {
   if (!sessionId) throw new Error("セッションIDがありません。");
-  if (Number(questionCount) !== CONFIG.QUESTION_COUNT) throw new Error("1人あたり60問の設定が必要です。");
+  if (Number(questionCount) !== CONFIG.QUESTION_COUNT) throw new Error("1人あたり30問の設定が必要です。");
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -161,10 +162,11 @@ function assignImages_(sessionId, questionCount) {
       // 最も割り当て数が少ない画像を優先し、同数ならランダムに選ぶ
       shuffle_(candidates);
       candidates.sort((a, b) => a.count - b.count);
-      if (candidates.length < 10) {
-        throw new Error(category + " の未達画像が10枚未満です。回答状況を確認してください。");
+      if (candidates.length < 5) {
+        throw new Error(category + " の未達画像が5枚未満です。回答状況を確認してください。");
       }
-      candidates.slice(0, 10).forEach(x => selected.push(x.image));
+      // 1人につき各カテゴリ5枚、合計30枚を割り当てる
+      candidates.slice(0, 5).forEach(x => selected.push(x.image));
     });
 
     shuffle_(selected);
@@ -188,7 +190,9 @@ function resumeAssignment_(sessionId) {
     const s = getSheets_();
     expireOldAssignments_(s.assignments);
     const a = findAssignment_(s.assignments, sessionId);
-    if (!a || a.status !== "ACTIVE") throw new Error("回答セッションが見つからないか、有効期限が切れています。新しい回答として開始してください。");
+    if (!a || (a.status !== "ACTIVE" && a.status !== "COMPLETED")) {
+      throw new Error("回答セッションが見つからないか、有効期限が切れています。新しい回答として開始してください。");
+    }
     return assignmentPayload_(s, a);
   } finally {
     lock.releaseLock();
@@ -201,7 +205,99 @@ function assignmentPayload_(s, a) {
   readImages_(s.images).forEach(x => map[x.imageId] = x);
   const images = ids.map(id => map[id]).filter(Boolean);
   if (images.length !== CONFIG.QUESTION_COUNT) throw new Error("割り当て画像を復元できません。");
-  return {ok: true, respondentId: a.respondentId, images: images};
+  const submittedCount = countSessionResponses_(s.responses, a.sessionId);
+  return {
+    ok: true,
+    respondentId: a.respondentId,
+    images: images,
+    submittedCount: submittedCount
+  };
+}
+
+function countSessionResponses_(sheet, sessionId) {
+  const n = sheet.getLastRow() - 1;
+  if (n <= 0) return 0;
+  const rows = sheet.getRange(2, 3, n, 2).getValues(); // sessionId, imageId
+  return rows.filter(r => String(r[0]) === String(sessionId)).length;
+}
+
+function submitOneResponse_(body) {
+  const sessionId = body.sessionId;
+  const respondentId = body.respondentId;
+  const response = body.response;
+  if (!sessionId || !respondentId || !response || !response.imageId ||
+      !Array.isArray(response.scores) || response.scores.length !== 9) {
+    throw new Error("1問分の回答データが正しくありません。");
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const s = getSheets_();
+    const a = findAssignment_(s.assignments, sessionId);
+    if (!a) throw new Error("回答セッションが見つかりません。");
+    if (a.respondentId !== respondentId) throw new Error("回答者IDが一致しません。");
+
+    const assignedIds = JSON.parse(a.imageIdsJson);
+    const submittedCount = countSessionResponses_(s.responses, sessionId);
+
+    // 応答が保存された直後に通信が切れた場合の再送信は成功扱いにする
+    const n = s.responses.getLastRow() - 1;
+    if (n > 0) {
+      const saved = s.responses.getRange(2, 3, n, 2).getValues();
+      const alreadySaved = saved.some(r =>
+        String(r[0]) === String(sessionId) && String(r[1]) === String(response.imageId)
+      );
+      if (alreadySaved) {
+        if (submittedCount >= CONFIG.QUESTION_COUNT) {
+          s.assignments.getRange(a.row, 4).setValue("COMPLETED");
+        }
+        return {
+          ok: true,
+          duplicate: true,
+          submittedCount: submittedCount,
+          respondentId: respondentId
+        };
+      }
+    }
+
+    if (a.status !== "ACTIVE") throw new Error("この回答セッションは有効ではありません。");
+    if (submittedCount >= CONFIG.QUESTION_COUNT) throw new Error("30問すべて送信済みです。");
+
+    const expectedImageId = assignedIds[submittedCount];
+    if (String(response.imageId) !== String(expectedImageId)) {
+      throw new Error("回答する画像の順番が一致しません。ページを再読み込みしてください。");
+    }
+
+    const imageMap = {};
+    readImages_(s.images).forEach(x => imageMap[x.imageId] = x);
+    const image = imageMap[response.imageId];
+    if (!image) throw new Error("対象画像がImagesシートにありません。");
+
+    response.scores.forEach(v => {
+      if (!Number.isInteger(v) || v < 1 || v > 6) {
+        throw new Error("スコアは1～6で回答してください。");
+      }
+    });
+
+    const row = [new Date(), respondentId, sessionId, image.imageId,
+      image.category, image.color].concat(response.scores);
+    s.responses.appendRow(row);
+
+    const newCount = submittedCount + 1;
+    if (newCount >= CONFIG.QUESTION_COUNT) {
+      s.assignments.getRange(a.row, 4).setValue("COMPLETED");
+    }
+    SpreadsheetApp.flush();
+    return {
+      ok: true,
+      saved: 1,
+      submittedCount: newCount,
+      respondentId: respondentId
+    };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function submitResponses_(body) {
